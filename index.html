@@ -243,16 +243,7 @@
     const API_KEY ="AIzaSyB7eliVGgyhiK1PxeYTizBAc4Yf6Ko3Fqo"; 
 
     async function askAI() {
-        } catch (error) {
-            // This will show the REAL error on your screen
-            alert("DEBUG ERROR: " + error.toString()); 
-            
-            box.innerHTML = `
-                <b style="color:red">Connection Failed.</b><br>
-                <small>${error.message}</small>
-            `;
-        }
-
+ 
         const box = document.getElementById('ai-response');
         const btn = document.querySelector('.btn-ai');
         
