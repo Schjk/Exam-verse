@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JEE Mock CBT - Full Version</title>
+    <style>
+        /* CSS STYLES */
+        :root { --primary: #007bff; --header-height: 60px; }
+        body { margin: 0; font-family: sans-serif; height: 100vh; display: flex; flex-direction: column; }
+        
+        header {
+            height: var(--header-height); background: #fff; border-bottom: 1px solid #ccc;
+            display: flex; justify-content: space-between; align-items: center; padding: 0 1rem;
+        }
+        
+        .main-container { display: flex; flex: 1; overflow: hidden; }
+        .question-area { flex: 1; padding: 1rem; overflow-y: auto; }
+        .sidebar { width: 280px; background: #f8f9fa; display: flex; flex-direction: column; border-left: 1px solid #ddd; }
+        
+        /* Palette Grid */
+        .palette-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 10px; overflow-y: auto; }
+        .q-btn { height: 40px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        
+        /* Status Colors */
+        .q-btn.current { border: 2px solid #000; box-shadow: 0 0 5px rgba(0,0,0,0.3); }
+        .q-btn.answered { background: #28a745; color: white; border: none; }
+        .q-btn.not-answered { background: #dc3545; color: white; border: none; }
+        
+        /* UI Elements */
+        .option-box { padding: 12px; border: 1px solid #ccc; margin-bottom: 8px; border-radius: 4px; display: block; cursor: pointer; }
+        .option-box:hover { background: #f0f0f0; }
+        .option-box input { margin-right: 10px; }
+        
+        .footer-controls { padding: 10px; border-top: 1px solid #ccc; display: flex; justify-content: space-between; }
+        .btn { padding: 10px 20px; cursor: pointer; border: none; border-radius: 4px; color: white; font-weight: bold; font-size: 14px; }
+        .btn-save { background: #28a745; }
+        .btn-clear { background: #dc3545; }
+        .btn-ai { background: linear-gradient(45deg, #4285F4, #AA00FF); width: 100%; margin-top: 15px; }
+
+        #ai-response { background: #e8f0fe; padding: 15px; border-left: 5px solid #4285F4; margin-top: 15px; display: none; line-height: 1.5; }
+        #timer { font-size: 1.2rem; font-weight: bold; color: #333; }
+        #debug-msg { color: red; padding: 10px; font-weight: bold; display: none; background: #ffe6e6; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h3>JEE CBT App</h3>
+    <div id="timer">Loading...</div>
+</header>
+
+<div id="debug-msg"></div>
+
+<div class="main-container">
+    <div class="question-area">
+        <div id="question-text">
+            <h3>Question <span id="q-num">1</span></h3>
+            <p id="q-content">Loading content...</p>
+        </div>
+        
+        <div id="options-container"></div>
+
+        <button class="btn btn-ai" onclick="askAI()">✨ Ask AI for Hint</button>
+        <div id="ai-response"></div>
+    </div>
+
+    <div class="sidebar">
+        <div style="padding: 10px; background: #e9ecef; font-weight: bold;">Question Palette</div>
+        <div class="palette-grid" id="palette"></div>
+    </div>
+</div>
+
+<div class="footer-controls">
+    <button class="btn btn-clear" onclick="clearResponse()">Clear</button>
+    <button class="btn btn-save" onclick="saveAndNext()">Save & Next</button>
+</div>
+
+<script>
+    // --- 1. DATA (Question Bank) ---
+    const questions = [
+        { 
+            id: 1, 
+            text: "If f(x) = x^2, what is f'(x)?", 
+            options: ["x", "2x", "x^2", "0"], 
+            correct: 1 
+        },
+        { 
+            id: 2, 
+            text: "Dimensions of Planck's Constant (h)?", 
+            options: ["ML2T-1", "MLT-1", "ML2T-2", "M0L0T0"], 
+            correct: 0 
+        },
+        { 
+            id: 3, 
+            text: "Which is NOT a colligative property?", 
+            options: ["Osmotic Pressure", "Elevation in BP", "Vapor Pressure", "Depression in Freezing Pt"], 
+            correct: 2 
+        },
+        {
+            id: 4,
+            text: "Unit of Force?",
+            options: ["Watt", "Joule", "Newton", "Pascal"],
+            correct: 2
+        }
+    ];
+
+    // --- 2. STATE ---
+    let currentQIndex = 0;
+    let answers = {}; 
+    let status = {};  
+    
+    // --- 3. CONFIGURATION (PASTE KEY HERE) ---
+    const API_KEY = "AIzaSyB7eliVGgyhiK1PxeYTizBAc4Yf6Ko3Fqo"; 
+
+    // --- 4. ENGINE ---
+    function init() {
+        try {
+            renderPalette();
+            loadQuestion(0);
+            startTimer(180 * 60);
+        } catch (e) {
+            document.getElementById('debug-msg').style.display = 'block';
+            document.getElementById('debug-msg').innerText = "CRASH ERROR: " + e.message;
+        }
+    }
+
+    function loadQuestion(index) {
+        currentQIndex = index;
+        const q = questions[index];
+        
+        document.getElementById('q-num').innerText = index + 1;
+        document.getElementById('q-content').innerText = q.text;
+        document.getElementById('ai-response').style.display = 'none';
+        
+        const container = document.getElementById('options-container');
+        container.innerHTML = '';
+        
+        q.options.forEach((opt, i) => {
+            const isChecked = answers[index] === i ? 'checked' : '';
+            // Using a label for better click area
+            container.innerHTML += `
+                <label class="option-box" style="${isChecked ? 'background:#d1e7dd; border-color:#0f5132' : ''}">
+                    <input type="radio" name="opt" value="${i}" ${isChecked} onchange="selectOption(${i})">
+                    ${opt}
+                </label>
+            `;
+        });
+        updatePalette();
+    }
+
+    function selectOption(optionIndex) {
+        answers[currentQIndex] = optionIndex;
+        loadQuestion(currentQIndex); // Re-render to show selection styling
+    }
+
+    function saveAndNext() {
+        status[currentQIndex] = (answers[currentQIndex] !== undefined) ? 'answered' : 'not-answered';
+        
+        if (currentQIndex < questions.length - 1) {
+            loadQuestion(currentQIndex + 1);
+        } else {
+            alert("Test Completed! You reached the end.");
+        }
+    }
+
+    function clearResponse() {
+        delete answers[currentQIndex];
+        status[currentQIndex] = 'visited';
+        loadQuestion(currentQIndex);
+    }
+
+    function renderPalette() {
+        const p = document.getElementById('palette');
+        p.innerHTML = '';
+        questions.forEach((_, i) => {
+            const btn = document.createElement('button');
+            btn.className = 'q-btn';
+            btn.innerText = i + 1;
+            btn.onclick = () => loadQuestion(i);
+            p.appendChild(btn);
+        });
+    }
+
+    function updatePalette() {
+        questions.forEach((_, i) => {
+            const btn = document.querySelector(`#palette button:nth-child(${i+1})`);
+            btn.className = 'q-btn'; 
+            if (i === currentQIndex) btn.classList.add('current');
+            else if (status[i] === 'answered') btn.classList.add('answered');
+            else if (status[i] === 'not-answered') btn.classList.add('not-answered');
+        });
+    }
+
+    // --- 5. REAL AI INTEGRATION ---
+    async function askAI() {
+        const box = document.getElementById('ai-response');
+        
+        // CHECK 1: Is API Key present?
+        if (API_KEY === "PASTE_YOUR_KEY_HERE" || API_KEY.length < 10) {
+            alert("ERROR: You forgot to paste your API Key in the code!");
+            return;
+        }
+
+        box.style.display = 'block';
+        box.innerHTML = "<b>Thinking...</b>";
+
+        const qText = questions[currentQIndex].text;
+        const qOpts = questions[currentQIndex].options.join(", ");
+        
+        const prompt = `Student needs a hint for: "${qText}". Options: ${qOpts}. Don't give the answer. Give a conceptual hint.`;
+
+        try {
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                }
+            );
+
+            const data = await response.json();
+
+            // CHECK 2: Did Google send an error?
+            if (data.error) {
+                throw new Error("Google Error: " + data.error.message);
+            }
+
+            const aiText = data.candidates[0].content.parts[0].text;
+            box.innerHTML = `<b>🤖 Gemini:</b><br>${aiText}`;
+
+        } catch (error) {
+            alert("AI FAILED: " + error.message);
+            box.innerHTML = `<b style="color:red">Connection Failed.</b>`;
+        }
+    }
+
+    // --- 6. TIMER ---
+    function startTimer(duration) {
+        let timer = duration, m, s;
+        setInterval(() => {
+            m = parseInt(timer / 60, 10);
+            s = parseInt(timer % 60, 10);
+            document.getElementById('timer').innerText = `Time: ${m}:${s < 10 ? '0'+s : s}`;
+            if (--timer < 0) timer = duration;
+        }, 1000);
+    }
+
+    // START
+    init();
+</script>
+</body>
+</html>
